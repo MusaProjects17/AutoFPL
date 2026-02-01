@@ -1,0 +1,32 @@
+# Run AutoFPL before each gameweek (dry-run by default).
+# Schedule: Friday 17:00 UTC (adjust for UK; gameweek deadlines are usually Saturday).
+# To apply changes, set APPLY_CHANGES to true in env or add a manual workflow_dispatch with --apply.
+name: AutoFPL cron
+
+# on:
+#  schedule:
+#    - cron: "0 17 * * 5"
+#  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run AutoFPL (dry-run)
+        env:
+          FPL_EMAIL: ${{ secrets.FPL_EMAIL }}
+          FPL_PASSWORD: ${{ secrets.FPL_PASSWORD }}
+          FPL_MANAGER_ID: ${{ secrets.FPL_MANAGER_ID }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+        run: uv run python main.py
+        # To apply changes instead, run: uv run python main.py --apply
