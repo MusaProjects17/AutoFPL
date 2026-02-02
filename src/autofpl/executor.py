@@ -48,14 +48,32 @@ def already_made_transfers_this_gw(session: Any, manager_id: int, gameweek: int)
     return False
 
 
-def run_dry_run(decisions: GameweekDecisions, gameweek: int) -> None:
-    """Log decisions without calling FPL API."""
+def _element_id_to_name(elements: list[dict] | None) -> dict[int, str]:
+    """Build element_id -> web_name for human-readable output."""
+    if not elements:
+        return {}
+    return {int(e["id"]): e.get("web_name", str(e["id"])) for e in elements if e.get("id") is not None}
+
+
+def run_dry_run(
+    decisions: GameweekDecisions,
+    gameweek: int,
+    elements: list[dict] | None = None,
+) -> None:
+    """Log decisions without calling FPL API. If elements is provided, show player names."""
+    id_to_name = _element_id_to_name(elements)
+    def _name(eid: int | None) -> str:
+        if eid is None:
+            return "—"
+        return id_to_name.get(eid, str(eid))
+
     logger.info("Dry-run: gameweek %s decisions", gameweek)
     logger.info("  reasoning: %s", decisions.reasoning)
     logger.info("  chip: %s", decisions.chip.value)
-    logger.info("  captain_id: %s, vice_captain_id: %s", decisions.captain_id, decisions.vice_captain_id)
+    logger.info("  captain: %s (%s)", _name(decisions.captain_id), decisions.captain_id)
+    logger.info("  vice_captain: %s (%s)", _name(decisions.vice_captain_id), decisions.vice_captain_id)
     for t in decisions.transfers:
-        logger.info("  transfer out %s -> in %s", t.element_out, t.element_in)
+        logger.info("  transfer out %s (%s) -> in %s (%s)", _name(t.element_out), t.element_out, _name(t.element_in), t.element_in)
 
 
 def run_apply(

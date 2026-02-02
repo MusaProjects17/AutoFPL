@@ -5,9 +5,13 @@ import re
 import time
 from typing import Any
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from autofpl.decisions import GameweekDecisions, parse_decisions_from_json
+
+# Longer timeout for large prompts (3 minutes). Value in milliseconds.
+GEMINI_TIMEOUT_MS = 180_000
 
 
 def _build_prompt(
@@ -38,8 +42,10 @@ Rules:
 - You have {free_transfers} free transfer(s). Each extra transfer costs 4 points.
 - Chips available: {chips_available}. Use chip only if it is clearly optimal (e.g. wildcard for many changes, bench_boost when bench is strong).
 - Captain and vice_captain must be from your 15-man squad. Prefer high form and easy fixtures.
+- Pay close attention to a player's availability. If a player is not available, injury status or suspension and make decisions accordingly.
 
-First reason step-by-step (chain of thought): who to transfer out and why, who to bring in, captain choice, chip use. Then output exactly one JSON object with no extra text before or after, using this schema:
+
+First reason step-by-step (chain of thought): who to transfer out and why, who to bring in (please consider the player's availability, injury status or suspension and make decisions accordingly), captain choice, chip use. Then output exactly one JSON object with no extra text before or after, using this schema:
 
 {{
   "transfers": [{{"element_out": <id>, "element_in": <id>}}, ...],
@@ -89,8 +95,10 @@ def get_decisions(
     model_name: str = "gemini-2.5-flash",
 ) -> GameweekDecisions:
     """Call Gemini and return parsed GameweekDecisions."""
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name)
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS),
+    )
     prompt = _build_prompt(
         gameweek=gameweek,
         my_team_picks=my_team_picks,
@@ -101,18 +109,32 @@ def get_decisions(
         my_squad_element_ids=my_squad_element_ids,
         fixtures_summary=fixtures_summary,
     )
+    last_error: Exception | None = None
     for attempt in range(3):
         try:
-            response = model.generate_content(prompt)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
             if not response.text:
                 raise ValueError("Empty response from model")
             raw = extract_json_block(response.text)
             return parse_decisions_from_json(raw)
         except Exception as e:
+            last_error = e
             err_str = str(e).lower()
-            if "429" in err_str or "quota" in err_str or "resourcelimit" in err_str:
-                if attempt < 2:
-                    time.sleep(40)
-                    continue
+            is_retryable = (
+                "429" in err_str
+                or "quota" in err_str
+                or "resourcelimit" in err_str
+                or "504" in err_str
+                or "deadline" in err_str
+                or "timeout" in err_str
+            )
+            if is_retryable and attempt < 2:
+                time.sleep(30 + attempt * 20)
+                continue
             raise
+    if last_error is not None:
+        raise last_error
     raise ValueError("Failed to get decisions after retries")
