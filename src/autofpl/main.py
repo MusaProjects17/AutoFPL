@@ -13,9 +13,8 @@ from autofpl.fpl_client import (
     get_bootstrap_static,
     get_fixtures,
     get_my_team,
-    login,
     next_gameweek_and_deadline,
-    session_from_cookie,
+    session_from_bearer_token,
 )
 from autofpl.llm import get_decisions
 from autofpl.scoring import enrich_players_with_scores
@@ -129,16 +128,15 @@ def main() -> None:
             print(f"  (Only {len(ids)}/15 players matched; check name spelling in PLACEHOLDER_SQUAD_SPEC.)")
         sys.exit(0)
 
-    email = os.getenv("FPL_EMAIL")
-    password = os.getenv("FPL_PASSWORD")
     manager_id_str = os.getenv("FPL_MANAGER_ID")
     api_key = os.getenv("GOOGLE_AI_API_KEY")
+    bearer_token = (os.getenv("FPL_ACCESS_TOKEN") or "").strip()
 
     if not api_key:
         logger.error("GOOGLE_AI_API_KEY not set. Set it in .env or environment.")
         sys.exit(1)
-    if apply_changes and (not email or not password):
-        logger.error("FPL_EMAIL and FPL_PASSWORD required when using --apply.")
+    if apply_changes and not bearer_token:
+        logger.error("FPL_ACCESS_TOKEN required when using --apply. Get it from DevTools → Network → my-team → X-Api-Authorization (see README).")
         sys.exit(1)
     if not manager_id_str:
         logger.error("FPL_MANAGER_ID not set. Set it in .env (your FPL entry ID from the URL).")
@@ -178,9 +176,9 @@ def main() -> None:
     free_transfers = 1
     chips_available = ["wildcard", "free_hit", "bench_boost", "triple_captain"]
 
-    if email and password:
+    if bearer_token:
         try:
-            session = login(email, password)
+            session = session_from_bearer_token(bearer_token)
             my_team = get_my_team(session, manager_id)
             picks_raw = my_team.get("picks", [])
             my_team_picks = picks_raw
@@ -191,47 +189,22 @@ def main() -> None:
             if not chips_available:
                 chips_available = ["none"]
         except Exception as e:
-            # If login/my-team failed and FPL_COOKIE is set, try cookie-only (browser cookie)
-            cookie = os.getenv("FPL_COOKIE")
-            if cookie:
-                try:
-                    session = session_from_cookie(cookie)
-                    my_team = get_my_team(session, manager_id)
-                    picks_raw = my_team.get("picks", [])
-                    my_team_picks = picks_raw
-                    bank = my_team.get("transfers", {}).get("bank", 0) or 0
-                    free_transfers = my_team.get("transfers", {}).get("free", 1) or 1
-                    chips = my_team.get("chips", [])
-                    chips_available = [c.get("name", "").lower().replace(" ", "_") for c in chips if c.get("status") == "available"]
-                    if not chips_available:
-                        chips_available = ["none"]
-                except Exception as e2:
-                    logger.warning("Cookie-only auth also failed: %s; using placeholder squad.", e2)
-                    session = None
-                    my_team = None
-                    placeholder_ids = _resolve_placeholder_squad(bootstrap.get("elements", []))
-                    my_team_picks = [{"element": eid} for eid in placeholder_ids]
-            else:
-                logger.warning("Could not fetch my-team (login or my-team failed: %s); using placeholder squad for dry-run.", e)
-                session = None
-                my_team = None
-                placeholder_ids = _resolve_placeholder_squad(bootstrap.get("elements", []))
-                my_team_picks = [{"element": eid} for eid in placeholder_ids]
-    else:
-        logger.warning("FPL_EMAIL/FPL_PASSWORD not set; using placeholder squad (no my-team data).")
+            logger.warning("FPL_ACCESS_TOKEN auth failed: %s; using placeholder squad.", e)
+            session = None
+            my_team = None
+
+    if my_team is None:
+        logger.warning("No my-team data (set FPL_ACCESS_TOKEN in .env; see README). Using placeholder squad.")
         placeholder_ids = _resolve_placeholder_squad(bootstrap.get("elements", []))
         my_team_picks = [{"element": eid} for eid in placeholder_ids]
 
-    # If --require-team: stop here unless we have real team data (avoid using LLM with placeholder)
     if args.require_team and my_team is None:
         logger.error(
-            "Real team data could not be fetched (login and cookie fallback failed or no credentials). "
+            "Real team data could not be fetched (missing or invalid FPL_ACCESS_TOKEN). "
             "Stopping so the LLM is not called with placeholder data."
         )
         logger.error(
-            "Next step: DevTools → Application → Cookies → select *fantasy.premierleague.com* (not .premierleague.com). "
-            "While logged in, copy every cookie from that origin into FPL_COOKIE (name1=value1; name2=value2; ...). "
-            "If that origin has no cookies, FPL may not support scripted access. See README 'Fix 403' or remove --require-team."
+            "Get FPL_ACCESS_TOKEN from DevTools → Network → Pick Team → filter 'my-team' → Headers → X-Api-Authorization. See README."
         )
         sys.exit(1)
 
@@ -256,7 +229,7 @@ def main() -> None:
     else:
         run_dry_run(decisions, gameweek, elements=elements)
         if apply_changes and not session:
-            logger.info("Use FPL_EMAIL and FPL_PASSWORD with --apply to apply changes.")
+            logger.info("Set FPL_ACCESS_TOKEN in .env to use --apply (see README).")
 
 
 if __name__ == "__main__":

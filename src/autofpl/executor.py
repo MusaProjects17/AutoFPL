@@ -119,8 +119,7 @@ def run_apply(
         })
 
     if transfers_payload:
-        # FPL: first POST with confirmed=False to validate, then confirmed=True
-        post_transfer(session, manager_id, gameweek, transfers_payload, chip=transfer_chip, confirmed=False)
+        # Single POST with confirmed=True; confirmed=False was applying the transfer and made a second call invalid.
         post_transfer(session, manager_id, gameweek, transfers_payload, chip=transfer_chip, confirmed=True)
         logger.info("Applied %s transfer(s).", len(transfers_payload))
         # Refetch team so picks reflect new squad for lineup POST
