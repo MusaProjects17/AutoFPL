@@ -17,6 +17,7 @@ from autofpl.fpl_client import (
     session_from_bearer_token,
 )
 from autofpl.llm import get_decisions
+from autofpl.notification import build_email_body, send_notification_email
 from autofpl.scoring import enrich_players_with_scores
 
 # Placeholder squad when my-team cannot be fetched (e.g. 403). (element_type, name) per FPL: 1=GK, 2=DEF, 3=MID, 4=FWD.
@@ -224,10 +225,22 @@ def main() -> None:
         model_name=model_name,
     )
 
+    notification_to = os.getenv("NOTIFICATION_EMAIL_TO", "").strip()
+
     if apply_changes and session and my_team is not None:
         run_apply(session, manager_id, gameweek, decisions, my_team, elements)
+        if notification_to:
+            my_team_after = get_my_team(session, manager_id)
+            bank_after = (my_team_after.get("transfers") or {}).get("bank")
+            if bank_after is None:
+                bank_after = (my_team.get("transfers") or {}).get("bank")
+            body = build_email_body(decisions, gameweek, bank_after, elements, mode="apply")
+            send_notification_email(notification_to, f"AutoFPL [Applied] Gameweek {gameweek}", body)
     else:
-        run_dry_run(decisions, gameweek, elements=elements)
+        run_dry_run(decisions, gameweek, elements=elements, bank=bank)
+        if notification_to:
+            body = build_email_body(decisions, gameweek, bank, elements, mode="dry_run")
+            send_notification_email(notification_to, f"AutoFPL [Dry-Run] Gameweek {gameweek}", body)
         if apply_changes and not session:
             logger.info("Set FPL_ACCESS_TOKEN in .env to use --apply (see README).")
 

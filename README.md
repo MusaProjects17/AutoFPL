@@ -15,6 +15,7 @@ Automated Fantasy Premier League pipeline: fetch FPL data, compute custom scores
    - `FPL_ACCESS_TOKEN` – API auth token (X-Api-Authorization). **Never commit** (use `.env` only). Get it from the browser: log into FPL → DevTools → **Network** → click **Pick Team** → filter for **my-team** → select the request → **Headers** → **X-Api-Authorization** (see [Getting the token](#getting-the-fpl-access-token) below).
    - `GOOGLE_AI_API_KEY` – API key from [Google AI Studio](https://aistudio.google.com/apikey) (Gemini). The script uses the `google-genai` package.
    - `GEMINI_MODEL` (optional) – Model name, e.g. `gemini-2.0-flash`, `gemini-2.5-flash`. Use a model that has free-tier quota in your region.
+   - **Email notifications** (optional): set `NOTIFICATION_EMAIL_TO` to the address that should receive a summary after each run (dry-run or apply). The email includes chips, transfers, starting XI, bench, captain/vice, rationale, and bank balance. Also set `SMTP_HOST` (default `smtp.gmail.com`), `SMTP_PORT` (default `587`), `SMTP_USER`, and `SMTP_PASSWORD`. For Gmail use an [app password](https://support.google.com/accounts/answer/185833). Optional: `NOTIFICATION_EMAIL_FROM` (defaults to `SMTP_USER`).
 
 3. **Run**
    - Dry-run (default; no changes to your team):

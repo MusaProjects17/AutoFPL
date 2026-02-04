@@ -9,8 +9,30 @@ from autofpl.fpl_client import get_my_team, get_transfers, post_team, post_trans
 logger = logging.getLogger(__name__)
 
 
-def _picks_with_captaincy(my_team_picks: list[dict], captain_id: int | None, vice_captain_id: int | None) -> list[dict[str, Any]]:
-    """Return picks list with captain/vice set. FPL expects element, position, is_captain, is_vice_captain."""
+def _picks_with_captaincy(
+    my_team_picks: list[dict],
+    captain_id: int | None,
+    vice_captain_id: int | None,
+    lineup_order: list[int] | None = None,
+) -> list[dict[str, Any]]:
+    """Return picks list with captain/vice set. FPL expects element, position, is_captain, is_vice_captain.
+    If lineup_order is 15 element IDs, use that for order (positions 1–11 = starting XI, 12–15 = bench)."""
+    if lineup_order and len(lineup_order) == 15:
+        squad_ids = {p.get("element") for p in my_team_picks}
+        if set(lineup_order) != squad_ids:
+            raise ValueError(
+                "lineup_order must contain exactly the 15 squad element IDs (after transfers). "
+                f"Got {set(lineup_order) - squad_ids} not in squad, {squad_ids - set(lineup_order)} not in lineup_order."
+            )
+        out = []
+        for i, eid in enumerate(lineup_order, 1):
+            out.append({
+                "element": eid,
+                "position": i,
+                "is_captain": eid == captain_id if captain_id else False,
+                "is_vice_captain": eid == vice_captain_id if vice_captain_id else False,
+            })
+        return out
     out = []
     for p in my_team_picks:
         eid = p.get("element")
@@ -59,6 +81,7 @@ def run_dry_run(
     decisions: GameweekDecisions,
     gameweek: int,
     elements: list[dict] | None = None,
+    bank: int | None = None,
 ) -> None:
     """Log decisions without calling FPL API. If elements is provided, show player names."""
     id_to_name = _element_id_to_name(elements)
@@ -74,6 +97,11 @@ def run_dry_run(
     logger.info("  vice_captain: %s (%s)", _name(decisions.vice_captain_id), decisions.vice_captain_id)
     for t in decisions.transfers:
         logger.info("  transfer out %s (%s) -> in %s (%s)", _name(t.element_out), t.element_out, _name(t.element_in), t.element_in)
+    if decisions.lineup_order and len(decisions.lineup_order) == 15:
+        logger.info("  starting XI: %s", ", ".join(_name(eid) for eid in decisions.lineup_order[:11]))
+        logger.info("  bench: %s", ", ".join(_name(eid) for eid in decisions.lineup_order[11:]))
+    if bank is not None:
+        logger.info("  bank: £%.1fm", bank / 10.0)
 
 
 def run_apply(
@@ -126,10 +154,18 @@ def run_apply(
         my_team = get_my_team(session, manager_id)
         picks = my_team.get("picks", [])
 
-    # Lineup: captain, vice, chip (bboost/3xc)
-    lineup_picks = _picks_with_captaincy(picks, decisions.captain_id, decisions.vice_captain_id)
+    # Lineup: starting XI + bench order (if lineup_order set), captain, vice, chip (bboost/3xc)
+    lineup_picks = _picks_with_captaincy(
+        picks, decisions.captain_id, decisions.vice_captain_id, decisions.lineup_order
+    )
     lineup_chip = None
     if decisions.chip in (ChipType.BENCH_BOOST, ChipType.TRIPLE_CAPTAIN):
         lineup_chip = _chip_api_value(decisions.chip)
     post_team(session, manager_id, lineup_picks, chip=lineup_chip)
-    logger.info("Applied lineup (captain=%s, vice=%s, chip=%s).", decisions.captain_id, decisions.vice_captain_id, lineup_chip)
+    logger.info(
+        "Applied lineup (starting XI + bench=%s, captain=%s, vice=%s, chip=%s).",
+        bool(decisions.lineup_order),
+        decisions.captain_id,
+        decisions.vice_captain_id,
+        lineup_chip,
+    )

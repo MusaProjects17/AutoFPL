@@ -27,6 +27,10 @@ class GameweekDecisions(BaseModel):
     captain_id: int | None = Field(None, description="FPL element id of captain")
     vice_captain_id: int | None = Field(None, description="FPL element id of vice captain")
     chip: ChipType = Field(ChipType.NONE, description="Chip to play this gameweek")
+    lineup_order: list[int] | None = Field(
+        None,
+        description="Optional: 15 element IDs in order. Positions 1–11 = starting XI, 12–15 = bench. If null, keep current order.",
+    )
     reasoning: str = Field("", description="Short reasoning for the decisions (chain of thought summary)")
 
     def transfers_for_api(self) -> list[dict]:

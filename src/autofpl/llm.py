@@ -28,9 +28,13 @@ def _build_prompt(
     squad_desc = []
     for p in player_scores:
         if p["id"] in my_squad_element_ids:
+            chance = p.get("chance_of_playing_this_round")
+            status = p.get("status", "")
+            news = (p.get("news") or "")[:80]
+            avail = f" status={status} chance={chance} news={news}" if (status or chance is not None or news) else ""
             squad_desc.append(
                 f"  id={p['id']} {p['web_name']} cost={p.get('now_cost')} pts={p.get('total_points')} "
-                f"value_index={p.get('value_index')} form={p.get('form_score')} fixture_diff={p.get('fixture_difficulty')}"
+                f"value_index={p.get('value_index')} form={p.get('form_score')} fixture_diff={p.get('fixture_difficulty')}{avail}"
             )
     squad_text = "\n".join(squad_desc) if squad_desc else " (none )"
     all_players_text = json.dumps(player_scores[:400], indent=0)  # cap size for context
@@ -42,18 +46,21 @@ Rules:
 - You have {free_transfers} free transfer(s). Each extra transfer costs 4 points.
 - Chips available: {chips_available}. Use chip only if it is clearly optimal (e.g. wildcard for many changes, bench_boost when bench is strong).
 - Captain and vice_captain must be from your 15-man squad. Prefer high form and easy fixtures.
-- Pay close attention to a player's availability. If a player is not available, injury status or suspension and make decisions accordingly.
+- Availability (CRITICAL): FPL "status" can be "a" (available), "d" (doubtful), "i" (injured), "s" (suspended), "u" (unavailable). "news" often describes injury or suspension. "chance_of_playing_this_round" is 0-100 or null. You MUST prioritise transferring OUT any squad member who is injured, suspended, or has low chance (e.g. 0, 25, 50 or null when news suggests absence). Do not start injured/suspended players; bench them at minimum (CRITICAL:only if this is most optimal), and use free transfers to replace them with available players first before other transfers.
+- Do not be afraid to spend all bank on transfers if it is most optimal.
 
-
-First reason step-by-step (chain of thought): who to transfer out and why, who to bring in (please consider the player's availability, injury status or suspension and make decisions accordingly), captain choice, chip use. Then output exactly one JSON object with no extra text before or after, using this schema:
+First reason step-by-step (chain of thought): identify any squad players who are injured, suspended, or unlikely to play (check status, news, chance_of_playing_this_round); prioritise transferring them out. Then other transfers, captain choice, chip use, and which 11 players should start and which 4 on the bench (never start injured/suspended players). Then output exactly one JSON object with no extra text before or after, using this schema:
 
 {{
   "transfers": [{{"element_out": <id>, "element_in": <id>}}, ...],
   "captain_id": <element_id or null>,
   "vice_captain_id": <element_id or null>,
   "chip": "none" | "wildcard" | "free_hit" | "bench_boost" | "triple_captain",
+  "lineup_order": [<id1>, <id2>, ...] or null,
   "reasoning": "<short summary>"
 }}
+
+lineup_order: array of exactly 15 element IDs — your 15 squad members in the order you want them. Positions 1–11 = starting XI (1=GK, 2–5=DEF, 6–9=MID, 10–11=FWD or another valid formation), 12–15 = bench (12=GK, 13–15=outfield). Use the same 15 players as your squad (after any transfers). If you do not want to change who starts or bench order, set to null.
 
 Your current squad (element ids and stats):
 {squad_text}
@@ -61,7 +68,7 @@ Your current squad (element ids and stats):
 Upcoming fixtures (gameweek {gameweek}):
 {fixtures_summary}
 
-All players with precomputed stats (id, web_name, element_type, team, now_cost, total_points, value_index, form_score, fixture_difficulty):
+All players with precomputed stats (id, web_name, element_type, team, now_cost, total_points, value_index, form_score, fixture_difficulty, chance_of_playing_this_round, status, news):
 {all_players_text}
 
 Output only the single JSON object, no markdown code block."""

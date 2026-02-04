@@ -75,7 +75,7 @@ def enrich_players_with_scores(
     """
     Add value_index, form_score, and fixture_difficulty to each player (for LLM context).
     Returns a list of dicts with id, web_name, element_type, team, now_cost, total_points,
-    value_index, form_score, fixture_difficulty (and chance_of_playing_this_round if present).
+    value_index, form_score, fixture_difficulty, chance_of_playing_this_round, status, news.
     """
     difficulty = fixture_difficulty_for_players(elements, teams, fixtures, event_id)
     out: list[dict[str, Any]] = []
@@ -94,5 +94,7 @@ def enrich_players_with_scores(
             "form_score": form_score(p),
             "fixture_difficulty": difficulty.get(int(eid)),
             "chance_of_playing_this_round": p.get("chance_of_playing_this_round"),
+            "status": p.get("status"),
+            "news": p.get("news") or "",
         })
     return out
